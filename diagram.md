@@ -11,5 +11,6 @@ sequenceDiagram
     IdP->>LDAP: Verifica le credenziali dell'utente tramite LDAP
     LDAP->>IdP: Restituisce il risultato della verifica
     IdP->>LDAP: Recupera gli attributi dell'utente da LDAP
+    LDAP->>IdP: Attributi dell'utente passati da LDAP a Idp
     IdP->>SP: Genera un token di autenticazione e reindirizza l'utente al SP
     SP->>Client: Concede l'accesso all'utente
