@@ -1,0 +1,26 @@
+<mermaid>
+flowchart TD
+  A[Start] --> B[Pre-flight<br/>args, pass-file, TZ, tmp]
+  B -->|OK| C[Step 1: SP<br/>GET con PAOS]
+  C -->|CT=PAOS| D[Estrai RelayState e ACS hint]
+  C -->|Errore/CT≠PAOS| SPFAIL[Failure SP<br/>notifica mail<br/>EXIT 0]
+
+  D --> E[Step 2: IdP ECP<br/>POST SOAP + BASIC]
+  E -->|Target HAProxy| E1[--resolve su nodo]
+  E --> E2[Verifica HTTP 2xx e Content-Type]
+  E2 -->|KO| IDPFAIL[Failure IdP/Rete<br/>notifica mail<br/>EXIT 77]
+  E2 -->|OK| F[Estrai ACS_URL o hint]
+  F --> G[Reiniezione RelayState se mancante]
+
+  G --> H[Step 3: SP ACS<br/>POST PAOS]
+  H --> I{HTTP 200/302<br/>& Set-Cookie<br/>_shibsession_?}
+  I -->|Sì| OK[OK ECP login<br/>clear flag<br/>EXIT 0]
+  I -->|No| SPFAIL2[Failure SP<br/>notifica mail<br/>EXIT 0]
+
+  SPFAIL --> END
+  IDPFAIL --> END
+  SPFAIL2 --> END
+  OK --> END[End]
+
+  B -.->|Pre-flight KO| PFKO[EXIT 1]
+</mermaid>
