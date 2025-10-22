@@ -1,4 +1,4 @@
-<mermaid>
+```mermaid
 flowchart TD
   A[Start] --> B[Pre-flight<br/>args, pass-file, TZ, tmp]
   B -->|OK| C[Step 1: SP<br/>GET con PAOS]
@@ -23,4 +23,4 @@ flowchart TD
   OK --> END[End]
 
   B -.->|Pre-flight KO| PFKO[EXIT 1]
-</mermaid>
+
