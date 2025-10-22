@@ -1,26 +1,54 @@
 ```mermaid
-flowchart TD
-  A[Start] --> B[Pre-flight<br/>args, pass-file, TZ, tmp]
-  B -->|OK| C[Step 1: SP<br/>GET con PAOS]
-  C -->|CT=PAOS| D[Estrai RelayState e ACS hint]
-  C -->|Errore/CT≠PAOS| SPFAIL[Failure SP<br/>notifica mail<br/>EXIT 0]
+sequenceDiagram
+    autonumber
 
-  D --> E[Step 2: IdP ECP<br/>POST SOAP + BASIC]
-  E -->|Target HAProxy| E1[--resolve su nodo]
-  E --> E2[Verifica HTTP 2xx e Content-Type]
-  E2 -->|KO| IDPFAIL[Failure IdP/Rete<br/>notifica mail<br/>EXIT 77]
-  E2 -->|OK| F[Estrai ACS_URL o hint]
-  F --> G[Reiniezione RelayState se mancante]
+    participant HAProxy as HAProxy (external-check)
+    participant Script as ECP Check Script
+    participant SP as Service Provider (URL protetto)
+    participant IdP as IdP ECP Endpoint (SOAP/BASIC)
+    participant ACS as SP ACS (responseConsumerURL)
+    participant Mail as SMTP
+    participant State as StateFS (anti-spam)
 
-  G --> H[Step 3: SP ACS<br/>POST PAOS]
-  H --> I{HTTP 200/302<br/>& Set-Cookie<br/>_shibsession_?}
-  I -->|Sì| OK[OK ECP login<br/>clear flag<br/>EXIT 0]
-  I -->|No| SPFAIL2[Failure SP<br/>notifica mail<br/>EXIT 0]
+    HAProxy->>Script: Avvio check
+    Note over Script: Pre-flight: args, pass-file, TZ=Europe/Rome, tmp, timeouts
 
-  SPFAIL --> END
-  IDPFAIL --> END
-  SPFAIL2 --> END
-  OK --> END[End]
+    alt Pre-flight KO
+        Script-->>HAProxy: exit 1 (errore locale)
+    else Pre-flight OK
+        Script->>SP: GET risorsa protetta (Accept: PAOS, header PAOS)
+        SP-->>Script: Risposta
 
-  B -.->|Pre-flight KO| PFKO[EXIT 1]
+        alt Content-Type = application/vnd.paos+xml
+            Note over Script: Estrai RelayState e hint ACS
+            Script->>IdP: POST SOAP/ECP + BASIC (inoltro body PAOS)
+            opt Target nodo specifico
+                Note over Script: --resolve/SNI verso HAPROXY_SERVER_ADDR:ECP_PORT
+            end
+            IdP-->>Script: Risposta SOAP (HTTP 2xx + CT)
 
+            alt IdP/Rete KO (HTTP/CT errato o timeout)
+                Script->>Mail: Notifica failure IdP/Rete
+                Script->>State: set flag (TTL opzionale)
+                Script-->>HAProxy: exit 77 (mark DOWN)
+            else IdP OK
+                Note over Script: Determina ACS_URL (dalla risposta o hint); reinietta RelayState se mancante
+                Script->>ACS: POST PAOS alla ACS
+                ACS-->>Script: HTTP 200/302 + header
+
+                alt Set-Cookie _shibsession_ presente
+                    Script->>State: clear flag (global/per-node)
+                    Script-->>HAProxy: exit 0 (OK)
+                else Cookie assente o codice inatteso
+                    Script->>Mail: Notifica failure SP
+                    Script->>State: set flag SP (scope global/per-node)
+                    Script-->>HAProxy: exit 0 (nodo resta UP)
+                end
+            end
+
+        else Content-Type ≠ PAOS / errore SP
+            Script->>Mail: Notifica failure SP
+            Script->>State: set flag SP (scope global/per-node)
+            Script-->>HAProxy: exit 0 (nodo resta UP)
+        end
+    end
